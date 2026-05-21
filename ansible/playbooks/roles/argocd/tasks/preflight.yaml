@@ -1,16 +1,68 @@
-- name: Assert required runtime variables are defined
+- name: Check required tools are installed on the controller
+  ansible.builtin.shell: command -v {{ item }}
+  loop:
+    - git
+    - helm
+  register: _argocd_tool_checks
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Check required Python libraries are installed on the controller
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -c
+      - "import kubernetes, hvac"
+  register: _argocd_python_libs
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert controller prerequisites exist
   ansible.builtin.assert:
     that:
-      - vault_token is defined and vault_token | length > 0
-      - github_pat is defined and github_pat | length > 0
+      - _argocd_tool_checks.results | selectattr('rc', 'ne', 0) | list | length == 0
+      - _argocd_python_libs.rc == 0
     fail_msg: >-
-      Missing required runtime variables. Run with:
-      -e vault_token=... -e github_pat=...
+      The controller is missing required ArgoCD prerequisites. Ensure `git`,
+      `helm`, and the Python libraries `kubernetes` and `hvac` are installed
+      before running this automation.
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert required variables are defined
+  ansible.builtin.assert:
+    that:
+      - (item.value | string | trim | length) > 0
+      - not ((item.value | string) is match('^[A-Z][A-Z0-9_]*$'))
+    fail_msg: "Variable `{{ item.name }}` is unset or still uses a placeholder value."
+  loop:
+    - { name: vault_token,              value: "{{ vault_token }}" }
+    - { name: vault_addr,               value: "{{ vault_addr }}" }
+    - { name: vault_kv_mount,           value: "{{ vault_kv_mount }}" }
+    - { name: vault_argocd_secret_path, value: "{{ vault_argocd_secret_path }}" }
+    - { name: vault_github_app_path,    value: "{{ vault_github_app_path }}" }
+    - { name: github_pat,               value: "{{ github_pat }}" }
+    - { name: infra_helm_repo,          value: "{{ infra_helm_repo }}" }
+    - { name: infra_helm_revision,      value: "{{ infra_helm_revision }}" }
+  no_log: true
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Assert kubeconfig artifact exists
   ansible.builtin.stat:
     path: "{{ kubeconfig }}"
   register: _argocd_kubeconfig_stat
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Fail if kubeconfig artifact is missing
   ansible.builtin.assert:
@@ -18,6 +70,9 @@
     fail_msg: >-
       Kubeconfig artifact not found at {{ kubeconfig }}.
       Run bootstrap stages first before deploying ArgoCD.
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Verify Vault is reachable
   community.hashi_vault.vault_read:
@@ -25,6 +80,9 @@
     auth_method: none
     path: sys/health
   register: _vault_health
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Assert Vault is not sealed or uninitialized
   ansible.builtin.assert:
@@ -34,6 +92,9 @@
     fail_msg: >-
       Vault at {{ vault_addr }} is sealed or uninitialized.
       Unseal Vault before running ArgoCD bootstrap.
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Verify Vault token is valid
   community.hashi_vault.vault_read:
@@ -42,6 +103,9 @@
     path: auth/token/lookup-self
   no_log: true
   register: _vault_token_lookup
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Assert Vault token has sufficient TTL
   ansible.builtin.assert:
@@ -51,3 +115,6 @@
     fail_msg: >-
       Vault token expires in less than 5 minutes (TTL: {{ _vault_token_lookup.data.data.ttl }}s).
       Provide a token with sufficient TTL.
+  delegate_to: localhost
+  become: false
+  run_once: true

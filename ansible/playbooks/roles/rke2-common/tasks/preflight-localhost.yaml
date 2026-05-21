@@ -1,3 +1,27 @@
+- name: Check required Python library is installed for controller-side tasks
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -c
+      - "import kubernetes"
+  register: _controller_python_libs
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert controller prerequisites exist
+  ansible.builtin.assert:
+    that:
+      - _controller_python_libs.rc == 0
+    fail_msg: >-
+      The controller is missing the required `kubernetes` Python library.
+      Install it before running this automation.
+  delegate_to: localhost
+  become: false
+  run_once: true
+
 - name: Assert required inventory groups exist
   ansible.builtin.assert:
     that:
@@ -6,6 +30,9 @@
     fail_msg: >-
       Inventory must define `kube-masters` and `kube-workers`, with at least one
       control-plane node in `kube-masters`.
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Build cluster inventory facts
   ansible.builtin.set_fact:
@@ -13,6 +40,9 @@
     rke2_master_node_ips: "{{ groups.get('kube-masters', []) | map('extract', hostvars, 'rke2_node_ip') | list }}"
     rke2_cluster_node_ips: "{{ (groups.get('kube-masters', []) + groups.get('kube-workers', [])) | map('extract', hostvars, 'rke2_node_ip') | list }}"
     rke2_cluster_ansible_hosts: "{{ (groups.get('kube-masters', []) + groups.get('kube-workers', [])) | map('extract', hostvars, 'ansible_host') | list }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Assert inventory hostnames are unique
   ansible.builtin.assert:
@@ -20,6 +50,9 @@
       - (rke2_cluster_hosts | unique | length) == (rke2_cluster_hosts | length)
     fail_msg: >-
       Inventory hostnames must be unique across the whole bootstrap inventory.
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Assert shared bootstrap variables are populated
   ansible.builtin.assert:
@@ -32,6 +65,9 @@
     - { name: rke2_api_fqdn, value: "{{ rke2_api_fqdn }}" }
     - { name: rke2_cluster_domain, value: "{{ rke2_cluster_domain }}" }
     - { name: vip_interface, value: "{{ vip_interface }}" }
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Assert bootstrap network values are well formed
   ansible.builtin.assert:
@@ -43,6 +79,9 @@
     fail_msg: >-
       `rke2_vip`, `rke2_cluster_cidr`, `rke2_service_cidr`, and `vip_prefix`
       must be populated with proper CIDR values.
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Assert per-host connection variables are populated
   ansible.builtin.assert:
@@ -57,6 +96,9 @@
       Host `{{ item }}` must define concrete `ansible_host` and `rke2_node_ip`
       values before bootstrap starts.
   loop: "{{ rke2_cluster_hosts }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Assert cluster addresses are unique
   ansible.builtin.assert:
@@ -66,14 +108,6 @@
       - rke2_vip not in rke2_cluster_node_ips
     fail_msg: >-
       Node IPs, Ansible connection targets, and the VIP must all be unique.
-
-- name: Assert control-plane TLS SAN list matches control-plane inventory
-  ansible.builtin.assert:
-    that:
-      - (rke2_master_ips | length) == (groups['kube-masters'] | length)
-      - (rke2_master_ips | unique | length) == (rke2_master_ips | length)
-      - (rke2_master_ips | reject('match', '^[A-Z][A-Z0-9_]*$') | list | length) == (rke2_master_ips | length)
-      - (rke2_master_ips | sort) == (rke2_master_node_ips | sort)
-    fail_msg: >-
-      `rke2_master_ips` must contain the concrete `rke2_node_ip` values of every
-      host in `kube-masters`, with no placeholders or duplicates.
+  delegate_to: localhost
+  become: false
+  run_once: true

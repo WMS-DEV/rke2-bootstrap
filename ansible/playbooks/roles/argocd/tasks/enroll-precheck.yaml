@@ -7,14 +7,23 @@
       argocd_parent_kubeconfig must be set (path to the parent ArgoCD cluster
       kubeconfig). Pass it via -e argocd_parent_kubeconfig=/path/to/parent.yaml
       or set it in group_vars/all.yaml.
+  delegate_to: localhost
+  become: false
+  run_once: true
 
 - name: Stat argocd_parent_kubeconfig file
   ansible.builtin.stat:
     path: "{{ argocd_parent_kubeconfig }}"
   register: _parent_kubeconfig_stat
+  delegate_to: localhost
+  become: false
+  run_once: true
 
-- name: Fail if argocd_parent_kubeconfig file does not exist
-  ansible.builtin.fail:
-    msg: >-
+- name: Assert argocd_parent_kubeconfig file exists
+  ansible.builtin.assert:
+    that: _parent_kubeconfig_stat.stat.exists
+    fail_msg: >-
       argocd_parent_kubeconfig file not found: {{ argocd_parent_kubeconfig }}
-  when: not _parent_kubeconfig_stat.stat.exists
+  delegate_to: localhost
+  become: false
+  run_once: true
