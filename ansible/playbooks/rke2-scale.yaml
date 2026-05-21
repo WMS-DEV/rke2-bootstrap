@@ -1,0 +1,100 @@
+- name: Detect RKE2 node state
+  hosts: all
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check rke2-server service
+      ansible.builtin.systemd:
+        name: rke2-server
+      register: _rke2_server_svc
+      failed_when: false
+
+    - name: Check rke2-agent service
+      ansible.builtin.systemd:
+        name: rke2-agent
+      register: _rke2_agent_svc
+      failed_when: false
+
+    - name: Fail on role mismatch — master running rke2-agent
+      ansible.builtin.fail:
+        msg: >-
+          Host {{ inventory_hostname }} is in kube-masters but rke2-agent is active.
+          This host may belong to a different cluster or was incorrectly provisioned.
+      when:
+        - inventory_hostname in groups['kube-masters']
+        - _rke2_agent_svc.status.ActiveState | default('') == 'active'
+
+    - name: Fail on role mismatch — worker running rke2-server
+      ansible.builtin.fail:
+        msg: >-
+          Host {{ inventory_hostname }} is in kube-workers but rke2-server is active.
+          This host may belong to a different cluster or was incorrectly provisioned.
+      when:
+        - inventory_hostname in groups['kube-workers']
+        - _rke2_server_svc.status.ActiveState | default('') == 'active'
+
+    - name: Group hosts by RKE2 state
+      ansible.builtin.group_by:
+        key: >-
+          rke2_{{ 'existing' if (
+            (inventory_hostname in groups['kube-masters'] and _rke2_server_svc.status.ActiveState | default('') == 'active') or
+            (inventory_hostname in groups['kube-workers'] and _rke2_agent_svc.status.ActiveState | default('') == 'active')
+          ) else 'new' }}
+
+- name: Assert at least one existing master is available for artifact retrieval
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Assert existing master presence
+      ansible.builtin.assert:
+        that: (groups['kube-masters'] | intersect(groups['rke2_existing'] | default([]))) | length > 0
+        fail_msg: >-
+          No existing master nodes found. All kube-masters are new — use
+          rke2-full-install.yaml or rke2-join-install.yaml for initial cluster bootstrap.
+
+- name: Prepare new nodes
+  hosts: rke2_new
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags:
+    - preflight
+    - host_prep
+  roles:
+    - rke2-common
+
+- name: Gather bootstrap artifacts from an existing master
+  hosts: kube-masters:&rke2_existing
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  run_once: true
+  tags:
+    - bootstrap_artifacts
+  roles:
+    - bootstrap-artifacts
+
+- name: Join new master nodes
+  hosts: kube-masters:&rke2_new
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  tags:
+    - master_join
+    - control_plane
+  roles:
+    - rke2-master
+
+- name: Join new worker nodes
+  hosts: kube-workers:&rke2_new
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags:
+    - workers
+  roles:
+    - rke2-worker
