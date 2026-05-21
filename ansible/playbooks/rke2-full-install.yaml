@@ -1,123 +1,30 @@
-- name: Preflight inventory and bootstrap inputs
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  any_errors_fatal: true
-  tags:
-    - preflight
-    - always
-  tasks:
-    - name: Include inventory preflight tasks
-      ansible.builtin.include_tasks: preflight-inventory.yaml
-      tags:
-        - preflight
-        - always
-
-    - name: Include localhost preflight tasks
-      ansible.builtin.include_tasks: preflight-localhost.yaml
-      tags:
-        - preflight
-        - always
-
-    - name: Include ArgoCD preflight tasks
-      ansible.builtin.include_tasks: preflight-argocd.yaml
-      tags:
-        - preflight
-        - argocd
-        - bootstrap
-
-- name: Preflight target hosts
+- name: Prepare all nodes
   hosts: all
   become: true
   gather_facts: false
   any_errors_fatal: true
   tags:
     - preflight
-    - always
-  tasks:
-    - name: Include host preflight tasks
-      ansible.builtin.include_tasks: preflight-hosts.yaml
-      tags:
-        - preflight
-        - always
-
-- name: Prepare hardware
-  hosts: all
-  become: true
-  gather_facts: false
-  any_errors_fatal: true
-  tags:
     - host_prep
-  handlers:
-    - name: Apply rke2 sysctl settings
-      ansible.builtin.command: sysctl --system
-      changed_when: false
+    - bootstrap
+    - always
+  roles:
+    - rke2-common
 
-    - name: Reload NetworkManager
-      ansible.builtin.service:
-        name: NetworkManager
-        state: reloaded
-  tasks:
-    - name: Include hardware prep tasks
-      ansible.builtin.include_tasks: hw_prep.yaml
-      tags:
-        - host_prep
-
-- name: Initialize master node
+- name: Initialize first master and gather bootstrap artifacts
   hosts: kube-masters[0]
   become: true
   gather_facts: false
   any_errors_fatal: true
   tags:
     - master_init
-    - control_plane
-    - bootstrap
-  tasks:
-    - name: Include master init tasks
-      ansible.builtin.include_tasks: master-init.yaml
-      tags:
-        - master_init
-        - control_plane
-        - bootstrap
-
-- name: Gather bootstrap artifacts from the first master
-  hosts: kube-masters[0]
-  become: true
-  gather_facts: false
-  any_errors_fatal: true
-  tags:
     - bootstrap_artifacts
-    - master_join
-    - workers
     - control_plane
     - bootstrap
-  tasks:
-    - name: Include bootstrap artifact prechecks
-      ansible.builtin.include_tasks: bootstrap-artifacts-precheck.yaml
-      tags:
-        - bootstrap_artifacts
-        - master_join
-        - workers
-        - control_plane
-        - bootstrap
-
-    - name: Include bootstrap artifact tasks
-      ansible.builtin.include_tasks: bootstrap-artifacts.yaml
-      tags:
-        - bootstrap_artifacts
-        - master_join
-        - workers
-        - control_plane
-        - bootstrap
-
-    - name: Include bootstrap artifact postchecks
-      ansible.builtin.include_tasks: bootstrap-artifacts-postcheck.yaml
-      tags:
-        - bootstrap_artifacts
-        - master_join
-        - workers
-        - control_plane
-        - bootstrap
+  roles:
+    - role: rke2-master
+      tasks_from: init
+    - bootstrap-artifacts
 
 - name: Join additional master nodes
   hosts: kube-masters[1:]
@@ -129,20 +36,8 @@
     - master_join
     - control_plane
     - bootstrap
-  tasks:
-    - name: Include master join prechecks
-      ansible.builtin.include_tasks: master-join-precheck.yaml
-      tags:
-        - master_join
-        - control_plane
-        - bootstrap
-
-    - name: Include master join tasks
-      ansible.builtin.include_tasks: master-join.yaml
-      tags:
-        - master_join
-        - control_plane
-        - bootstrap
+  roles:
+    - rke2-master
 
 - name: Join worker nodes
   hosts: kube-workers
@@ -152,18 +47,8 @@
   tags:
     - workers
     - bootstrap
-  tasks:
-    - name: Include worker prechecks
-      ansible.builtin.include_tasks: workers-precheck.yaml
-      tags:
-        - workers
-        - bootstrap
-
-    - name: Include worker join tasks
-      ansible.builtin.include_tasks: workers.yaml
-      tags:
-        - workers
-        - bootstrap
+  roles:
+    - rke2-worker
 
 - name: Bootstrap ArgoCD
   hosts: localhost
@@ -172,33 +57,9 @@
   any_errors_fatal: true
   tags:
     - argocd
-    - vault
     - bootstrap
-  tasks:
-    - name: Include ArgoCD preflight checks
-      ansible.builtin.include_tasks: argocd-precheck.yaml
-      tags:
-        - argocd
-        - bootstrap
-
-    - name: Include Vault Kubernetes auth reconfiguration tasks
-      ansible.builtin.include_tasks: argocd-vault-reconfig.yaml
-      tags:
-        - argocd
-        - vault
-        - bootstrap
-
-    - name: Include ArgoCD install tasks
-      ansible.builtin.include_tasks: argocd-install.yaml
-      tags:
-        - argocd
-        - bootstrap
-
-    - name: Include ArgoCD install postchecks
-      ansible.builtin.include_tasks: argocd-install-postcheck.yaml
-      tags:
-        - argocd
-        - bootstrap
+  roles:
+    - argocd
 
 - name: ArgoCD cutover
   hosts: localhost
@@ -207,13 +68,6 @@
   any_errors_fatal: true
   tags:
     - argocd_cutover
-  tasks:
-    - name: Include ArgoCD cutover tasks
-      ansible.builtin.include_tasks: argocd-cutover.yaml
-      tags:
-        - argocd_cutover
-
-    - name: Include ArgoCD cutover postchecks
-      ansible.builtin.include_tasks: argocd-cutover-postcheck.yaml
-      tags:
-        - argocd_cutover
+  roles:
+    - role: argocd
+      tasks_from: cutover
