@@ -84,10 +84,10 @@ argo-cd:
         labels:
           argocd.argoproj.io/secret-type: cluster
           infrastructure.wmsdev.pl/cluster: {{ rke2_cluster_domain }}
-          infrastructure.wmsdev.pl/cluster-group: prod
+          infrastructure.wmsdev.pl/cluster-group: {{ argocd_cluster_group }}
           bootstrap-stage: enrolling
       type: Opaque
       stringData:
         name: {{ rke2_cluster_domain }}
-        server: https://{{ rke2_api_fqdn }}
+        server: https://{{ rke2_api_fqdn }}:6443
         config: '{"tlsClientConfig":{"insecure":false}}'

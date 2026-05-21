@@ -1,6 +1,6 @@
 - name: Clone infra-helm
   ansible.builtin.git:
-    repo: "https://x-access-token:{{ github_pat }}@{{ infra_helm_repo | regex_replace('^https://', '') }}"
+    repo: "https://x-access-token:{{ github_pat }}@{{ argocd_repo_url | regex_replace('^https://', '') }}"
     dest: "{{ infra_helm_path }}"
     version: "{{ infra_helm_revision }}"
   no_log: true

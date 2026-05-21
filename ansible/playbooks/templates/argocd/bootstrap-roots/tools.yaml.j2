@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: {{ infra_helm_repo }}
+    repoURL: {{ argocd_repo_url }}
     targetRevision: {{ infra_helm_revision }}
     path: .argocd/bootstrap/tools
   destination:

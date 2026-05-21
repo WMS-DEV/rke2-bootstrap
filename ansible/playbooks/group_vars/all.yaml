@@ -11,7 +11,7 @@ vault_argocd_secret_path: argocd/argocd-secret
 
 # --- GitHub ---
 # github_pat: passed at runtime via -e github_pat=...
-infra_helm_repo: https://github.com/WMS-DEV/infra-helm.git
+argocd_repo_url: https://github.com/WMS-DEV/infra-helm.git
 infra_helm_revision: HEAD
 
 # --- Component versions ---

@@ -49,7 +49,7 @@
     - { name: vault_argocd_secret_path, value: "{{ vault_argocd_secret_path }}" }
     - { name: vault_github_app_path,    value: "{{ vault_github_app_path }}" }
     - { name: github_pat,               value: "{{ github_pat }}" }
-    - { name: infra_helm_repo,          value: "{{ infra_helm_repo }}" }
+    - { name: argocd_repo_url,           value: "{{ argocd_repo_url }}" }
     - { name: infra_helm_revision,      value: "{{ infra_helm_revision }}" }
   no_log: true
   delegate_to: localhost

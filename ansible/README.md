@@ -147,7 +147,7 @@ Defaults shared across all clusters. Can be overridden by the cluster inventory'
 | `vault_kv_mount` | KV v2 mount path |
 | `vault_github_app_path` | Vault path for GitHub App credentials |
 | `vault_argocd_secret_path` | Vault path for ArgoCD `server.secretkey` |
-| `infra_helm_repo` | Git URL for infra-helm |
+| `argocd_repo_url` | Git URL for the ArgoCD app-of-apps Helm repo |
 | `infra_helm_revision` | Branch/tag/SHA to check out |
 | `cilium_version` | Cilium version deployed via manifest |
 | `kube_vip_version` | kube-vip image version |
