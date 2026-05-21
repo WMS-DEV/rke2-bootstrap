@@ -1,0 +1,45 @@
+- name: Preflight decommission
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Assert decommission groups are defined and non-empty
+      ansible.builtin.assert:
+        that: >-
+          (groups['decommission-kube-masters'] | default([]) | length) > 0 or
+          (groups['decommission-kube-workers'] | default([]) | length) > 0
+        fail_msg: >-
+          Neither decommission-kube-masters nor decommission-kube-workers contain any hosts.
+
+    - name: Assert master quorum is maintained after decommission
+      ansible.builtin.assert:
+        that: >-
+          (groups['decommission-kube-masters'] | length) <=
+          ((groups['kube-masters'] | length - 1) // 2)
+        fail_msg: >-
+          Removing {{ groups['decommission-kube-masters'] | length }} master(s) from
+          {{ groups['kube-masters'] | length }} would break etcd quorum. At most
+          {{ (groups['kube-masters'] | length - 1) // 2 }} master(s) can be removed at once.
+      when: groups['decommission-kube-masters'] | default([]) | length > 0
+
+- name: Decommission master nodes
+  hosts: decommission-kube-masters
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  serial: 1
+  tags:
+    - masters
+  roles:
+    - node-remove
+
+- name: Decommission worker nodes
+  hosts: decommission-kube-workers
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags:
+    - workers
+  roles:
+    - node-remove
