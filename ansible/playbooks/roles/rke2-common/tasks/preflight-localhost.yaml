@@ -1,0 +1,113 @@
+- name: Check required Python library is installed for controller-side tasks
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -c
+      - "import kubernetes"
+  register: _controller_python_libs
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert controller prerequisites exist
+  ansible.builtin.assert:
+    that:
+      - _controller_python_libs.rc == 0
+    fail_msg: >-
+      The controller is missing the required `kubernetes` Python library.
+      Install it before running this automation.
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert required inventory groups exist
+  ansible.builtin.assert:
+    that:
+      - (groups.get('kube-masters', []) | length) > 0
+      - (groups.get('kube-workers', []) | length) > 0
+    fail_msg: >-
+      Inventory must define `kube-masters` and `kube-workers`, with at least one
+      control-plane node in `kube-masters`.
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Build cluster inventory facts
+  ansible.builtin.set_fact:
+    rke2_cluster_hosts: "{{ groups.get('kube-masters', []) + groups.get('kube-workers', []) }}"
+    rke2_master_node_ips: "{{ groups.get('kube-masters', []) | map('extract', hostvars, 'rke2_node_ip') | list }}"
+    rke2_cluster_node_ips: "{{ (groups.get('kube-masters', []) + groups.get('kube-workers', [])) | map('extract', hostvars, 'rke2_node_ip') | list }}"
+    rke2_cluster_ansible_hosts: "{{ (groups.get('kube-masters', []) + groups.get('kube-workers', [])) | map('extract', hostvars, 'ansible_host') | list }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert inventory hostnames are unique
+  ansible.builtin.assert:
+    that:
+      - (rke2_cluster_hosts | unique | length) == (rke2_cluster_hosts | length)
+    fail_msg: >-
+      Inventory hostnames must be unique across the whole bootstrap inventory.
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert shared bootstrap variables are populated
+  ansible.builtin.assert:
+    that:
+      - (item.value | string | trim | length) > 0
+      - not ((item.value | string) is match('^[A-Z][A-Z0-9_]*$'))
+    fail_msg: "Variable `{{ item.name }}` is unset or still uses a placeholder value."
+  loop:
+    - { name: rke2_vip, value: "{{ rke2_vip }}" }
+    - { name: rke2_api_fqdn, value: "{{ rke2_api_fqdn }}" }
+    - { name: rke2_cluster_domain, value: "{{ rke2_cluster_domain }}" }
+    - { name: vip_interface, value: "{{ vip_interface }}" }
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert bootstrap network values are well formed
+  ansible.builtin.assert:
+    that:
+      - rke2_vip is match('^\d+\.\d+\.\d+\.\d+$')
+      - rke2_cluster_cidr is match('^\d+\.\d+\.\d+\.\d+/\d+$')
+      - rke2_service_cidr is match('^\d+\.\d+\.\d+\.\d+/\d+$')
+      - (vip_prefix | string) is match('^\d+$')
+    fail_msg: >-
+      `rke2_vip`, `rke2_cluster_cidr`, `rke2_service_cidr`, and `vip_prefix`
+      must be populated with proper CIDR values.
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert per-host connection variables are populated
+  ansible.builtin.assert:
+    that:
+      - hostvars[item].ansible_host is defined
+      - hostvars[item].rke2_node_ip is defined
+      - (hostvars[item].ansible_host | string | trim | length) > 0
+      - (hostvars[item].rke2_node_ip | string | trim | length) > 0
+      - not ((hostvars[item].ansible_host | string) is match('^[A-Z][A-Z0-9_]*$'))
+      - (hostvars[item].rke2_node_ip | string) is match('^\d+\.\d+\.\d+\.\d+$')
+    fail_msg: >-
+      Host `{{ item }}` must define concrete `ansible_host` and `rke2_node_ip`
+      values before bootstrap starts.
+  loop: "{{ rke2_cluster_hosts }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Assert cluster addresses are unique
+  ansible.builtin.assert:
+    that:
+      - (rke2_cluster_node_ips | unique | length) == (rke2_cluster_node_ips | length)
+      - (rke2_cluster_ansible_hosts | unique | length) == (rke2_cluster_ansible_hosts | length)
+      - rke2_vip not in rke2_cluster_node_ips
+    fail_msg: >-
+      Node IPs, Ansible connection targets, and the VIP must all be unique.
+  delegate_to: localhost
+  become: false
+  run_once: true

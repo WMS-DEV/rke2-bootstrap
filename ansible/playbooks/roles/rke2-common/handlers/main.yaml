@@ -1,0 +1,8 @@
+- name: Apply rke2 sysctl settings
+  ansible.builtin.command: sysctl --system
+  changed_when: false
+
+- name: Reload NetworkManager
+  ansible.builtin.service:
+    name: NetworkManager
+    state: reloaded

@@ -1,0 +1,62 @@
+- name: Assert control-plane TLS SAN list matches control-plane inventory
+  ansible.builtin.assert:
+    that:
+      - (rke2_master_ips | length) == (groups['kube-masters'] | length)
+      - (rke2_master_ips | unique | length) == (rke2_master_ips | length)
+      - (rke2_master_ips | reject('match', '^[A-Z][A-Z0-9_]*$') | list | length) == (rke2_master_ips | length)
+      - (rke2_master_ips | sort) == (rke2_master_node_ips | sort)
+    fail_msg: >-
+      `rke2_master_ips` must contain the concrete `rke2_node_ip` values of every
+      host in `kube-masters`, with no placeholders or duplicates.
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Check local kubeconfig artifact
+  ansible.builtin.stat:
+    path: "{{ kubeconfig }}"
+  register: master_join_kubeconfig_stat
+  delegate_to: localhost
+  become: false
+
+- name: Check local token artifact
+  ansible.builtin.stat:
+    path: "{{ rke2_token_local_path }}"
+  register: master_join_token_stat
+  delegate_to: localhost
+  become: false
+
+- name: Assert join artifacts exist locally
+  ansible.builtin.assert:
+    that:
+      - master_join_kubeconfig_stat.stat.exists
+      - master_join_token_stat.stat.exists
+    fail_msg: >-
+      Join artifacts are missing locally. Run `master_init` first, then refresh bootstrap artifacts before joining
+      additional control-plane nodes.
+
+- name: Wait for first master node to be Ready
+  kubernetes.core.k8s_info:
+    kind: Node
+    name: "{{ groups['kube-masters'][0] }}"
+    kubeconfig: "{{ kubeconfig }}"
+  register: first_master_info
+  until: >
+    first_master_info.resources is defined and
+    first_master_info.resources | length > 0 and
+    (first_master_info.resources[0].status.conditions |
+     selectattr('type', 'equalto', 'Ready') |
+     selectattr('status', 'equalto', 'True') |
+     list | length > 0)
+  retries: 30
+  delay: 10
+  delegate_to: localhost
+  become: false
+
+- name: Wait for RKE2 registration endpoint on the VIP
+  ansible.builtin.wait_for:
+    host: "{{ rke2_vip }}"
+    port: 9345
+    timeout: 120
+  delegate_to: localhost
+  become: false

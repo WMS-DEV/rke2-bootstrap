@@ -1,0 +1,218 @@
+- name: Clone infra-helm
+  ansible.builtin.git:
+    repo: "https://x-access-token:{{ github_pat }}@{{ argocd_repo_url | regex_replace('^https://', '') }}"
+    dest: "{{ infra_helm_path }}"
+    version: "{{ infra_helm_revision }}"
+  no_log: true
+
+- name: Update Helm chart dependencies
+  ansible.builtin.command:
+    cmd: helm dependency update
+    chdir: "{{ infra_helm_path }}/ArgoCD"
+  changed_when: true
+
+- name: Render stub ArgoCD values
+  ansible.builtin.template:
+    src: values.bootstrap.yaml.j2
+    dest: "{{ bootstrap_artifact_dir }}/values.bootstrap.yaml"
+    mode: '0600'
+
+- name: Create argocd namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    api_version: v1
+    kind: Namespace
+    name: argocd
+    state: present
+
+- name: Read bootstrap and cutover Application state
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    name: "{{ item.name }}"
+    namespace: argocd
+  loop:
+    - { name: bootstrap-tools }
+    - { name: argocd }
+    - { name: appsets-root }
+  register: _argocd_stage_apps
+
+- name: Check bootstrap-stage label before ArgoCD install
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ rke2_cluster_domain | replace('.', '-') }}"
+    namespace: argocd
+  register: _bootstrap_stage_secret
+  failed_when: false
+
+- name: Assert cluster is still in bootstrap-install phase
+  ansible.builtin.assert:
+    that:
+      - >
+        (_bootstrap_stage_secret.resources | default([]) | length) == 0 or
+        _bootstrap_stage_secret.resources[0].metadata.labels['bootstrap-stage'] | default('bootstrap') != 'ready'
+    fail_msg: >-
+      ArgoCD cutover markers already exist. Refusing to rerun bootstrap install
+      after cutover state has been entered.
+
+- name: Read existing ArgoCD server secretkey from Vault
+  community.hashi_vault.vault_read:
+    url: "{{ vault_addr }}"
+    token: "{{ vault_token }}"
+    path: "{{ vault_kv_mount }}/data/{{ vault_argocd_secret_path }}"
+  register: _vault_argocd_secret_read
+  failed_when: false
+  no_log: true
+
+- name: Read existing argocd-secret from cluster
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    kind: Secret
+    name: argocd-secret
+    namespace: argocd
+  register: _argocd_secret_info
+
+- name: Set existing server secretkey facts
+  ansible.builtin.set_fact:
+    _vault_server_secretkey: "{{ _vault_argocd_secret_read.data.data['server.secretkey'] | default('') if not (_vault_argocd_secret_read.failed | default(false)) else '' }}"
+    _cluster_server_secretkey: >-
+      {{ (_argocd_secret_info.resources[0].data['server.secretkey'] | default('')) | b64decode
+         if (_argocd_secret_info.resources | default([]) | length) > 0 else '' }}
+  no_log: true
+
+- name: Assert existing argocd-secret is usable
+  ansible.builtin.assert:
+    that:
+      - >
+        (_argocd_secret_info.resources | default([]) | length) == 0 or
+        (_argocd_secret_info.resources[0].data['server.secretkey'] | default('') | length) > 0
+    fail_msg: >-
+      Existing `argocd-secret` is missing `server.secretkey`. Refusing to
+      overwrite it automatically during bootstrap.
+  no_log: true
+
+- name: Assert Vault and cluster secretkey do not conflict
+  ansible.builtin.assert:
+    that:
+      - >
+        (_vault_server_secretkey | length) == 0 or
+        (_cluster_server_secretkey | length) == 0 or
+        _vault_server_secretkey == _cluster_server_secretkey
+    fail_msg: >-
+      ArgoCD `server.secretkey` differs between Vault and the cluster secret.
+      Reconcile the secret manually before rerunning bootstrap.
+  no_log: true
+
+- name: Generate server.secretkey
+  ansible.builtin.set_fact:
+    argocd_server_secretkey: >-
+      {{ _vault_server_secretkey
+         if (_vault_server_secretkey | length) > 0
+         else _cluster_server_secretkey
+         if (_cluster_server_secretkey | length) > 0
+         else lookup('community.general.random_string', length=32, base64=true) }}
+  no_log: true
+
+- name: Write server.secretkey to Vault
+  community.hashi_vault.vault_kv2_write:
+    url: "{{ vault_addr }}"
+    token: "{{ vault_token }}"
+    engine_mount_point: "{{ vault_kv_mount }}"
+    path: "{{ vault_argocd_secret_path }}"
+    data: >-
+      {{ (_vault_argocd_secret_read.data.data | default({}))
+         | combine({'server.secretkey': argocd_server_secretkey}) }}
+  when: (_vault_server_secretkey | length) == 0
+  no_log: true
+
+- name: Pre-create argocd-secret without Helm ownership
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: argocd-secret
+        namespace: argocd
+      type: Opaque
+      stringData:
+        server.secretkey: "{{ argocd_server_secretkey }}"
+  when: (_argocd_secret_info.resources | default([]) | length) == 0
+  no_log: true
+
+- name: Check if ArgoCD application controller is already running
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    api_version: apps/v1
+    kind: StatefulSet
+    name: argocd-application-controller
+    namespace: argocd
+  register: _app_ctrl_precheck
+
+- name: Install stub ArgoCD
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - argocd
+      - "{{ infra_helm_path }}/ArgoCD"
+      - --namespace
+      - argocd
+      - --create-namespace
+      - --values
+      - "{{ infra_helm_path }}/ArgoCD/values.yaml"
+      - --values
+      - "{{ bootstrap_artifact_dir }}/values.bootstrap.yaml"
+      - --kubeconfig
+      - "{{ kubeconfig }}"
+      - --wait
+      - --timeout
+      - 300s
+  when: >
+    (_app_ctrl_precheck.resources | default([]) | length) == 0 or
+    (_app_ctrl_precheck.resources[0].status.readyReplicas | default(0)) < 1
+  changed_when: true
+
+- name: Fetch GitHub App credentials from Vault
+  community.hashi_vault.vault_kv2_get:
+    url: "{{ vault_addr }}"
+    token: "{{ vault_token }}"
+    path: "{{ vault_github_app_path }}"
+    engine_mount_point: "{{ vault_kv_mount }}"
+  register: _vault_github_app_raw
+  no_log: true
+
+- name: Set GitHub App credentials fact
+  ansible.builtin.set_fact:
+    _argocd_vault_creds: "{{ _vault_github_app_raw.secret }}"
+  no_log: true
+
+- name: Wait for ArgoCD application controller to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    api_version: apps/v1
+    kind: StatefulSet
+    name: argocd-application-controller
+    namespace: argocd
+  register: _app_ctrl
+  until: >
+    _app_ctrl.resources | length > 0 and
+    (_app_ctrl.resources[0].status.readyReplicas | default(0)) >= 1
+  retries: 40
+  delay: 10
+
+- name: Apply ArgoCD repository secret
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    definition: "{{ lookup('ansible.builtin.template', role_path + '/templates/repo-secret.yaml.j2') | from_yaml }}"
+
+- name: Apply bootstrap root Application
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    definition: "{{ lookup('ansible.builtin.template', role_path + '/templates/bootstrap-roots/tools.yaml.j2') | from_yaml }}"
+  when: (_argocd_stage_apps.results[0].resources | default([]) | length) == 0

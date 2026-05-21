@@ -1,0 +1,4 @@
+- name: Include worker prechecks
+  ansible.builtin.include_tasks: join-precheck.yaml
+- name: Include worker join tasks
+  ansible.builtin.include_tasks: join.yaml

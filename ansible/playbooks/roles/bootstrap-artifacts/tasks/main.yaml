@@ -1,0 +1,3 @@
+- ansible.builtin.include_tasks: precheck.yaml
+- ansible.builtin.include_tasks: fetch.yaml
+- ansible.builtin.include_tasks: postcheck.yaml

@@ -1,0 +1,8 @@
+- name: Run controller preflight checks
+  ansible.builtin.include_tasks: preflight-localhost.yaml
+
+- name: Run host preflight checks
+  ansible.builtin.include_tasks: preflight-hosts.yaml
+
+- name: Prepare hardware
+  ansible.builtin.include_tasks: hw_prep.yaml

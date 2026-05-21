@@ -1,0 +1,93 @@
+# Bootstrap overlay — applied on top of infra-helm/ArgoCD/values.yaml during stub install
+# Disables steady-state features not available before bootstrap completes
+# Ansible cutover (argocd-cutover.yaml) upgrades to values.yaml + values.stable.yaml
+
+grafanaDashboards:
+  enabled: false
+
+vaultSecrets:
+  enabled: false  # VSO is not yet installed
+
+argo-cd:
+  configs:
+    cm:
+      admin.enabled: false
+      # OIDC omitted — SSO not available during bootstrap
+    params:
+      server.insecure: true
+    secret:
+      # Prevent ArgoCD from creating argocd-secret — VSO will own it post-bootstrap
+      createSecret: false
+
+  controller:
+    replicas: 1
+    pdb:
+      enabled: false
+    metrics:
+      enabled: false
+      serviceMonitor:
+        enabled: false
+    vpa:
+      enabled: false
+
+  dex:
+    enabled: false
+
+  redis:
+    metrics:
+      enabled: false
+      serviceMonitor:
+        enabled: false
+
+  server:
+    replicas: 1
+    autoscaling:
+      enabled: false
+    pdb:
+      enabled: false
+    metrics:
+      enabled: false
+      serviceMonitor:
+        enabled: false
+    ingress:
+      enabled: false
+
+  repoServer:
+    replicas: 1
+    autoscaling:
+      enabled: false
+    pdb:
+      enabled: false
+    metrics:
+      enabled: false
+      serviceMonitor:
+        enabled: false
+
+  applicationSet:
+    replicas: 1
+    pdb:
+      enabled: false
+    metrics:
+      enabled: false
+      serviceMonitor:
+        enabled: false
+
+  notifications:
+    enabled: false
+
+  extraObjects:
+    - apiVersion: v1
+      kind: Secret
+      metadata:
+        name: {{ rke2_cluster_domain | replace('.', '-') }}
+        namespace: argocd
+        labels:
+          argocd.argoproj.io/secret-type: cluster
+          infrastructure.wmsdev.pl/cluster: {{ rke2_cluster_domain }}
+          infrastructure.wmsdev.pl/cluster-group: {{ argocd_cluster_group }}
+          bootstrap-stage: enrolling
+      type: Opaque
+      stringData:
+        name: {{ rke2_cluster_domain }}
+        server: https://{{ rke2_api_fqdn }}:6443
+        config: '{"tlsClientConfig":{"insecure":false}}'

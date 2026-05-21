@@ -1,0 +1,2 @@
+- ansible.builtin.include_tasks: join-precheck.yaml
+- ansible.builtin.include_tasks: join.yaml

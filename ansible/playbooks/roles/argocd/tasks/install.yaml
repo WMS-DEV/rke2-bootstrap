@@ -1,0 +1,4 @@
+- ansible.builtin.include_tasks: preflight.yaml
+- ansible.builtin.include_tasks: vault-reconfig.yaml
+- ansible.builtin.include_tasks: install-tasks.yaml
+- ansible.builtin.include_tasks: install-postcheck.yaml

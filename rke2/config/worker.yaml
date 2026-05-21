@@ -1,9 +1,0 @@
-# /etc/rancher/rke2/config.yaml
-# Worker nodes
-
-server: "https://<VIP>:9345"
-token: "<TOKEN>"
-
-node-ip: <NODE_IP>
-
-cluster-domain: <CLUSTER_DOMAIN>
