@@ -7,33 +7,21 @@
   ansible.builtin.file:
     path: /etc/rancher/rke2
     state: directory
-    mode: '0700'
+    mode: "0700"
 
 - name: Create rke2 config file
   ansible.builtin.template:
-    src: rke2/config/master-join.yaml.j2
+    src: worker.yaml.j2
     dest: /etc/rancher/rke2/config.yaml
-    mode: '0600'
+    mode: "0600"
 
-- name: Create /var/lib/rancher/rke2/agent/pod-manifests
-  ansible.builtin.file:
-    path: /var/lib/rancher/rke2/agent/pod-manifests
-    state: directory
-    mode: '0700'
-
-- name: Create kube-vip manifest
-  ansible.builtin.template:
-    src: rke2/pod-manifests/kube-vip.yaml.j2
-    dest: /var/lib/rancher/rke2/agent/pod-manifests/kube-vip.yaml
-    mode: '0600'
-
-- name: Install RKE2 server
+- name: Install RKE2 agent
   ansible.builtin.shell: |
-    curl -sfL https://get.rke2.io | sh -
+    curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh -
 
-- name: Enable and start RKE2 server
+- name: Enable and start RKE2 agent
   ansible.builtin.service:
-    name: rke2-server
+    name: rke2-agent
     state: started
     enabled: true
 
@@ -44,7 +32,6 @@
     kubeconfig: "{{ kubeconfig }}"
   register: node_info
   until: >
-    node_info.resources is defined and
     node_info.resources | length > 0 and
     (node_info.resources[0].status.conditions |
      selectattr('type', 'equalto', 'Ready') |

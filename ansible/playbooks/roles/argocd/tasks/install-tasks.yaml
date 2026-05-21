@@ -13,7 +13,7 @@
 
 - name: Render stub ArgoCD values
   ansible.builtin.template:
-    src: "{{ playbook_dir }}/templates/argocd/values.bootstrap.yaml.j2"
+    src: values.bootstrap.yaml.j2
     dest: "{{ bootstrap_artifact_dir }}/values.bootstrap.yaml"
     mode: '0600'
 
@@ -209,10 +209,10 @@
 - name: Apply ArgoCD repository secret
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
-    definition: "{{ lookup('ansible.builtin.template', playbook_dir + '/templates/argocd/repo-secret.yaml.j2') | from_yaml }}"
+    definition: "{{ lookup('ansible.builtin.template', role_path + '/templates/repo-secret.yaml.j2') | from_yaml }}"
 
 - name: Apply bootstrap root Application
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
-    definition: "{{ lookup('ansible.builtin.template', playbook_dir + '/templates/argocd/bootstrap-roots/tools.yaml.j2') | from_yaml }}"
+    definition: "{{ lookup('ansible.builtin.template', role_path + '/templates/bootstrap-roots/tools.yaml.j2') | from_yaml }}"
   when: (_argocd_stage_apps.results[0].resources | default([]) | length) == 0

@@ -1,0 +1,2 @@
+- ansible.builtin.include_tasks: cutover-tasks.yaml
+- ansible.builtin.include_tasks: cutover-postcheck.yaml

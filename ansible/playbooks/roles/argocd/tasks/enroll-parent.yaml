@@ -14,7 +14,7 @@
 - name: Apply ArgoCD cluster Secret to parent cluster
   kubernetes.core.k8s:
     kubeconfig: "{{ argocd_parent_kubeconfig }}"
-    definition: "{{ lookup('ansible.builtin.template', playbook_dir + '/templates/argocd/cluster-secret.yaml.j2') | from_yaml }}"
+    definition: "{{ lookup('ansible.builtin.template', role_path + '/templates/cluster-secret.yaml.j2') | from_yaml }}"
 
 - name: Read bootstrap-prod Application state on parent cluster
   kubernetes.core.k8s_info:
@@ -28,7 +28,7 @@
 - name: Apply bootstrap-prod Application to parent cluster
   kubernetes.core.k8s:
     kubeconfig: "{{ argocd_parent_kubeconfig }}"
-    definition: "{{ lookup('ansible.builtin.template', playbook_dir + '/templates/argocd/bootstrap-roots/prod.yaml.j2') | from_yaml }}"
+    definition: "{{ lookup('ansible.builtin.template', role_path + '/templates/bootstrap-roots/prod.yaml.j2') | from_yaml }}"
   when: (_bootstrap_prod_app.resources | default([]) | length) == 0
 
 - name: Wait for bootstrap-prod Application to be Healthy and Synced on parent

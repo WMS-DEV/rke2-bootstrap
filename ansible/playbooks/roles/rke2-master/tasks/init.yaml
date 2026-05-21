@@ -6,7 +6,7 @@
 
 - name: Create rke2 config file
   ansible.builtin.template:
-    src: rke2/config/master-init.yaml.j2
+    src: config/master-init.yaml.j2
     dest: /etc/rancher/rke2/config.yaml
     mode: '0600'
 
@@ -24,13 +24,13 @@
 
 - name: Create cilium manifest
   ansible.builtin.template:
-    src: rke2/manifests/cilium.yaml.j2
+    src: manifests/cilium.yaml.j2
     dest: /var/lib/rancher/rke2/server/manifests/cilium.yaml
     mode: '0600'
 
 - name: Create kube-vip manifest
   ansible.builtin.template:
-    src: rke2/pod-manifests/kube-vip.yaml.j2
+    src: pod-manifests/kube-vip.yaml.j2
     dest: /var/lib/rancher/rke2/agent/pod-manifests/kube-vip.yaml
     mode: '0600'
 
