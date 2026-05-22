@@ -170,14 +170,13 @@ decommission-kube-workers   → node-remove
 | `master_init` | `rke2-master (init)` |
 | `bootstrap_artifacts` | `bootstrap-artifacts` |
 | `master_join` | `rke2-master (join)` |
-| `workers` | `rke2-worker` |
+| `workers` | `rke2-worker`, `rke2-decommission` / `rke2-scale` worker plays |
 | `argocd` | `argocd (install)` |
 | `argocd_cutover` | `argocd (cutover)` |
 | `argocd_enroll` | `argocd (enroll)` |
 | `bootstrap` | All RKE2 + ArgoCD install plays |
 | `control_plane` | All master plays |
 | `masters` | `rke2-decommission` master plays |
-| `workers` | `rke2-decommission` / `rke2-scale` worker plays |
 
 ---
 

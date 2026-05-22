@@ -32,9 +32,10 @@
       {{ (_etcd_member_list.stdout | from_json).members
          | selectattr('name', 'equalto', ansible_hostname)
          | list }}
+  when: _etcd_member_list.rc == 0 and _etcd_member_list.stdout | length > 0
 
 - name: Remove etcd member
-  when: _etcd_self | length > 0
+  when: _etcd_self | default([]) | length > 0
   block:
     - name: Set etcd member ID fact
       ansible.builtin.set_fact:
@@ -65,7 +66,7 @@
 
 - name: Run RKE2 uninstall script
   ansible.builtin.command:
-    cmd: /usr/local/bin/rke2-uninstall.sh
+    cmd: "{{ '/usr/local/bin/rke2-uninstall.sh' if inventory_hostname in groups['kube-masters'] else '/usr/local/bin/rke2-agent-uninstall.sh' }}"
   changed_when: true
 
 - name: Delete node from cluster

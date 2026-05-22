@@ -7,21 +7,21 @@
     - name: Assert decommission groups are defined and non-empty
       ansible.builtin.assert:
         that: >-
-          (groups['decommission-kube-masters'] | default([]) | length) > 0 or
-          (groups['decommission-kube-workers'] | default([]) | length) > 0
+          (groups.get('decommission-kube-masters', []) | length) > 0 or
+          (groups.get('decommission-kube-workers', []) | length) > 0
         fail_msg: >-
           Neither decommission-kube-masters nor decommission-kube-workers contain any hosts.
 
     - name: Assert master quorum is maintained after decommission
       ansible.builtin.assert:
         that: >-
-          (groups['decommission-kube-masters'] | length) <=
+          (groups.get('decommission-kube-masters', []) | length) <=
           ((groups['kube-masters'] | length - 1) // 2)
         fail_msg: >-
-          Removing {{ groups['decommission-kube-masters'] | length }} master(s) from
+          Removing {{ groups.get('decommission-kube-masters', []) | length }} master(s) from
           {{ groups['kube-masters'] | length }} would break etcd quorum. At most
           {{ (groups['kube-masters'] | length - 1) // 2 }} master(s) can be removed at once.
-      when: groups['decommission-kube-masters'] | default([]) | length > 0
+      when: groups.get('decommission-kube-masters', []) | length > 0
 
 - name: Decommission master nodes
   hosts: decommission-kube-masters
