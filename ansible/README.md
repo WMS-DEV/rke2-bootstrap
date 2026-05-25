@@ -7,12 +7,17 @@ ansible/
   playbooks/
     rke2-full-install.yaml     # Entry point: full cluster bootstrap + ArgoCD
     rke2-join-install.yaml     # Entry point: join nodes + ArgoCD enroll
+    rke2-scale.yaml            # Entry point: scale cluster nodes up
+    rke2-decommission.yaml     # Entry point: decommission cluster nodes
     roles/
       rke2-common/             # Node prep — runs on all hosts
       rke2-master/             # Control plane init and join
       rke2-worker/             # Worker join
       bootstrap-artifacts/     # Fetch kubeconfig + token from first master
       argocd/                  # ArgoCD install, enroll, cutover
+      node-drain/              # Cordon and drain a node
+      node-uncordon/           # Uncordon a node
+      node-remove/             # Full node removal (drain + etcd + uninstall + delete)
     group_vars/
       all.yaml                 # Shared variables (vault, network, versions)
   collections/
@@ -82,6 +87,24 @@ Runs on localhost. Manages the full ArgoCD lifecycle for a cluster.
 
 ---
 
+### `node-drain`
+
+Cordons and drains a node via the Kubernetes API (runs on localhost). Reusable for any maintenance that requires evicting workloads before touching a node.
+
+---
+
+### `node-uncordon`
+
+Uncordons a node via the Kubernetes API (runs on localhost). Pair with `node-drain` for rolling operations such as host maintenance.
+
+---
+
+### `node-remove`
+
+Full node removal. Composes `node-drain`, then removes the etcd member (masters only, gated on actual etcd membership), stops and uninstalls RKE2, and deletes the node object from the cluster.
+
+---
+
 ## Entry-point playbooks
 
 ### `rke2-full-install.yaml`
@@ -114,6 +137,29 @@ The `master_init` play can be skipped with `--skip-tags master_init` when adding
 
 ---
 
+### `rke2-scale.yaml`
+
+Adds new nodes to a running cluster. Detects which hosts already have RKE2 running and only runs on the new ones. Fails if a `kube-masters` host is found running `rke2-agent` or vice versa.
+
+```
+all (new only)              → rke2-common
+kube-masters:&rke2_existing → bootstrap-artifacts (run_once)
+kube-masters:&rke2_new      → rke2-master (join), serial: 1
+kube-workers:&rke2_new      → rke2-worker
+```
+
+### `rke2-decommission.yaml`
+
+Removes nodes declared in `decommission-kube-masters` and `decommission-kube-workers` inventory groups. Asserts etcd quorum is maintained before proceeding — at most `floor((n-1)/2)` masters can be removed in a single run.
+
+```
+localhost                   → quorum preflight assert
+decommission-kube-masters   → node-remove, serial: 1
+decommission-kube-workers   → node-remove
+```
+
+---
+
 ## Tags
 
 | Tag | Plays |
@@ -124,12 +170,13 @@ The `master_init` play can be skipped with `--skip-tags master_init` when adding
 | `master_init` | `rke2-master (init)` |
 | `bootstrap_artifacts` | `bootstrap-artifacts` |
 | `master_join` | `rke2-master (join)` |
-| `workers` | `rke2-worker` |
+| `workers` | `rke2-worker`, `rke2-decommission` / `rke2-scale` worker plays |
 | `argocd` | `argocd (install)` |
 | `argocd_cutover` | `argocd (cutover)` |
 | `argocd_enroll` | `argocd (enroll)` |
 | `bootstrap` | All RKE2 + ArgoCD install plays |
 | `control_plane` | All master plays |
+| `masters` | `rke2-decommission` master plays |
 
 ---
 

@@ -1,0 +1,11 @@
+- name: Drain node {{ inventory_hostname }}
+  kubernetes.core.k8s_drain:
+    name: "{{ inventory_hostname }}"
+    kubeconfig: "{{ kubeconfig }}"
+    state: drain
+    delete_options:
+      ignore_daemonsets: true
+      delete_emptydir_data: true
+      wait_timeout: 300
+  delegate_to: localhost
+  become: false

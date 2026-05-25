@@ -1,0 +1,79 @@
+- name: Drain node
+  ansible.builtin.include_role:
+    name: node-drain
+
+- name: Gather host facts
+  ansible.builtin.setup:
+    filter: ansible_hostname
+
+- name: Get etcd member list
+  ansible.builtin.command:
+    argv:
+      - /var/lib/rancher/rke2/bin/etcdctl
+      - --endpoints
+      - https://127.0.0.1:2379
+      - --cacert
+      - /var/lib/rancher/rke2/server/tls/etcd/server-ca.crt
+      - --cert
+      - /var/lib/rancher/rke2/server/tls/etcd/server-client.crt
+      - --key
+      - /var/lib/rancher/rke2/server/tls/etcd/server-client.key
+      - member
+      - list
+      - -w
+      - json
+  register: _etcd_member_list
+  changed_when: false
+  failed_when: false
+
+- name: Set etcd membership facts
+  ansible.builtin.set_fact:
+    _etcd_self: >-
+      {{ (_etcd_member_list.stdout | from_json).members
+         | selectattr('name', 'equalto', ansible_hostname)
+         | list }}
+  when: _etcd_member_list.rc == 0 and _etcd_member_list.stdout | length > 0
+
+- name: Remove etcd member
+  when: _etcd_self | default([]) | length > 0
+  block:
+    - name: Set etcd member ID fact
+      ansible.builtin.set_fact:
+        _etcd_member_id: "{{ '%x' % (_etcd_self[0].ID | int) }}"
+
+    - name: Remove etcd member
+      ansible.builtin.command:
+        argv:
+          - /var/lib/rancher/rke2/bin/etcdctl
+          - --endpoints
+          - https://127.0.0.1:2379
+          - --cacert
+          - /var/lib/rancher/rke2/server/tls/etcd/server-ca.crt
+          - --cert
+          - /var/lib/rancher/rke2/server/tls/etcd/server-client.crt
+          - --key
+          - /var/lib/rancher/rke2/server/tls/etcd/server-client.key
+          - member
+          - remove
+          - "{{ _etcd_member_id }}"
+      changed_when: true
+
+- name: Stop RKE2 service
+  ansible.builtin.service:
+    name: "{{ 'rke2-server' if inventory_hostname in groups['kube-masters'] else 'rke2-agent' }}"
+    state: stopped
+    enabled: false
+
+- name: Run RKE2 uninstall script
+  ansible.builtin.command:
+    cmd: "{{ '/usr/local/bin/rke2-uninstall.sh' if inventory_hostname in groups['kube-masters'] else '/usr/local/bin/rke2-agent-uninstall.sh' }}"
+  changed_when: true
+
+- name: Delete node from cluster
+  kubernetes.core.k8s:
+    kind: Node
+    name: "{{ inventory_hostname }}"
+    state: absent
+    kubeconfig: "{{ kubeconfig }}"
+  delegate_to: localhost
+  become: false
